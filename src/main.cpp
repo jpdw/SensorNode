@@ -16,8 +16,14 @@
 #include "scheduler.h"
 #include "webserver.h"
 
-#include "espHardwareHelper.h"
+#include "wlan.h"
 
+#include "espHardwareHelper.h"
+#include "build_info.h"
+
+#ifdef INCLUDE_OTA_PUSH
+  bool enable_ota_push = true;
+#endif
 
 #define SERIAL_BAUD 115200  /* default serial debug baud rate */
 #define APP_STRING "uNode2" /* prepend hostname with this */
@@ -29,11 +35,8 @@ void publish_hello();
 void cb_test_function();
 
 // Define the WLAN
-const char* essid = "essid";
-const char* password = "password";
-const char* mqtt_server = "mqtt.server";
+const char* mqtt_server = "10.1.1.33";
 
-static int wlan_connected = false;
 static long clock_base=0;
 
 
@@ -138,6 +141,7 @@ void command_received(byte* payload, unsigned int length, bool global){
 }
 
 
+
 /* ==========================================================================
  * ==========================================================================
  *
@@ -154,38 +158,7 @@ void command_received(byte* payload, unsigned int length, bool global){
  */
 
 bool mqtt_parse_message_clock(byte * payload){
-  /*
-  //StaticJsonBuffer<150> jsonBuffer;
-  StaticJsonDocument<2560> jsonBuffer;
 
-  //Serial.print((char *)payload);
-
-  // Parse the clock payload
-
-  // removed & before root... 09/11/2019
-  JsonObject root = jsonBuffer.parseObject(payload);
-
-  // Test if parsing succeeds and exit if it was unsuccessful
-  //if (!root.success()) {
-  //  return false;
-  //}
-
-  auto error = deserializeJson(jsonBuffer, payload);
-  if (error) {
-      Serial.print(F("deserializeJson() failed with code "));
-      Serial.println(error.c_str());
-      return false;
-  }
-
-  // Set local variables for the
-  long unixtime = root["unixtime"];
-  long sunset = root["sunset"];
-  long sunrise = root["sunrise"];
-
-  // Update local time
-  // Calculate the unixtime when board started (i.e. millis = 0)
-  clock_base = unixtime - int(millis()/1000);
-*/
   return true;
 
 }
@@ -249,13 +222,6 @@ void mqtt_reconnect() {
       char topic_private[50];
       sprintf(topic_private,"device/%06X/command", ESP.getChipId());
 
-      char topic_clock[50];
-      sprintf(topic_clock,"device/global/clock");
-
-      //char topic_global[50];
-      //sprintf(topic_global,"device/global/command");
-
-      client.subscribe(topic_clock);
       client.subscribe(topic_private);
 
       // Publish hello to alert the network that this client has connected
@@ -308,11 +274,12 @@ void cb_test_function(){
 char deviceType [] = "uNode2";
 
 void publish_hello() {
-  char msg[60];
+  char msg[95];
   char topic[32];
   //Serial.print(WiFi.localIP());
-  sprintf(msg,"{'type':'%s', 'device':'%06X','IP':'%s','RSSI':'%d'}", \
-    deviceType,ESP.getChipId(), WiFi.localIP().toString().c_str(), WiFi.RSSI());
+  sprintf(msg,"{'type':'%s','device':'%06X','IP':'%s','RSSI':'%d','BLD':'%s'}", \
+    deviceType,ESP.getChipId(), WiFi.localIP().toString().c_str(), WiFi.RSSI(), __BI__DATEANDTIMESTAMP_STR);
+    //
 
   sprintf(topic,"device/%06X/hello", ESP.getChipId());
   client.publish(topic,msg);
@@ -321,6 +288,7 @@ void publish_hello() {
   Serial.println(msg);
 #endif
 }
+
 
 
 /* ==========================================================================
@@ -332,105 +300,64 @@ void publish_hello() {
  * ==========================================================================
  */
 
+char * device_id;  // Global store for device ID
 /*
- * setup§
+ * setup
  *
  */
 void setup() {
 
+  // Setup serial-output
+  Serial.begin(SERIAL_BAUD);
+  EEPROM.begin(512);
+
   char string_buffer[50];
   sprintf(string_buffer,"%s-%08X", APP_STRING, ESP.getChipId());
 
-  unsigned long exit_millis = 0;
+   // Generate device id based on MAC (e.g. A0B1C2)
+  device_id = new char[7];
+  sprintf(device_id,"%06X",ESP.getChipId());
+  
   build_commands();
 
-  // Setup serial-output
-  Serial.begin(SERIAL_BAUD);
-  delay(10);
+  // New style connection using the library
+  if(setup_wlan() == true){
+    state = CONNECTED;
+#ifdef INCLUDE_OTA_PUSH
+    if(enable_ota_push){
+      start_ota();
+    }
+#endif
+    //mqtt_setup();
+    mqtt_start();
+  }else{
+    state = UNCONNECTED;
+    settingMode = true;
+  }
 
   // Initialise 1-wire temperature sensors
   OneWireTemp_setup();
 
-  // connect to WLAN
-  Serial.print("Initialising WLAN to ");
-  Serial.print(essid);
-
-  WiFi.mode(WIFI_STA);
-  WiFi.hostname(string_buffer);
-  WiFi.begin(essid, password);
-
-  delay(500);
-
-  // loop until we have a connection
-  // or until connection attempts times out
-  exit_millis = millis() + 20000;
-  while (WiFi.status() != WL_CONNECTED) {
-    delay(500);
-    Serial.print(".");
-
-    // calculate if we're beyond the wait time
-    if (millis() > exit_millis){
-      Serial.print("\ntimeout on WLAN connection");
-      break;
-    }
-
-  }
-
-#ifdef INCLUDE_OTA_PUSH
-  //if(enable_ota_push){
-      start_ota();
-  //}
-#endif
-
-  // Start the scheduler running - including configuring some initial timers
-  scheduler_start();
-
-  // If WLAN is connected, start remaining services
-  if (WiFi.status() == WL_CONNECTED){
-    Serial.println("WLAN connected - starting services");
-    wlan_connected = true;
-    //start_server();
-    mqtt_start();
-    Serial.println("started mqtt");
-  //}else{
-  //  fade_around = 1;
-  }else{
-    Serial.println("WLAN not connected");
-
-    //TODO: Schedule re-attempt / Allow manual entry of ESSID via serial
-    //      or start AP with DHCPD & config via web browser
-  }
+  Serial.println("setup - end");
 }
-
-//#define RED_FADE 10
-//#define FADE_AROUND 11
 
 
 
 void loop() {
 
+  // Process network-related requests
+  loop_wlan();
+
+  // Some loop functions should only run when in CONNECTED mode
+  if(state == CONNECTED){
+
 #ifdef INCLUDE_OTA_PUSH
     ArduinoOTA.handle();
 #endif
-
-  // Everything from here down
-  // is only valid if we're connected
-  // to a network.  So exit if we're not
-  if (wlan_connected == false){
-    return;
+      // things to do if we're connected
+      client.loop();
+  
   }
-
-  if (!client.connected()) {
-    // check if state() has useful info as to why the client is disconnected
-    int state = client.state();
-    Serial.print("MQTT disconnected - state ");
-    Serial.println(state);
-    // try to reconnect
-    mqtt_reconnect();
-  }
-
-  // Run the MQTT loop to allow for regular processing
-  client.loop();
 
   // Any non-blocking calls
   scheduler_loop();
