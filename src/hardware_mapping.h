@@ -1,0 +1,1 @@
+#define hardware_mapping
