@@ -2,6 +2,7 @@
 
 #include <ESP8266WiFi.h>
 #ifdef INCLUDE_OTA_PUSH
+  #include <DNSServer.h>
   #include <ESP8266mDNS.h>
   #include <WiFiUdp.h>
   #include <ArduinoOTA.h>
@@ -19,7 +20,11 @@
 #include "wlan.h"
 
 #include "espHardwareHelper.h"
+#include "buildConfig.h"
 #include "build_info.h"
+
+#include "logging.h"
+
 
 #ifdef INCLUDE_OTA_PUSH
   bool enable_ota_push = true;
@@ -29,6 +34,12 @@
 #define APP_STRING "uNode2" /* prepend hostname with this */
 
 
+#ifdef INCLUDE_DEBUG
+  // Declare remote debug code
+  RemoteDebug Debug;
+  boolean enableDebug;
+#endif
+
 
 // Function prototypes
 void publish_hello();
@@ -37,7 +48,7 @@ void cb_test_function();
 // Define the WLAN
 const char* mqtt_server = "10.1.1.33";
 
-static long clock_base=0;
+//static long clock_base=0;
 
 
 WiFiClient espClient;
@@ -108,6 +119,7 @@ void scheduler_start(){
 
   // Call the test function periodically
   //scheduler_setup(3, 10000, 0, &cb_test_function, fSCHED0_enabled);
+
 }
 
 /*
@@ -263,15 +275,18 @@ void mqtt_start(){
  ^
  *  Simple function to be used as a callback for testing things...
  *
- *
  */
 void cb_test_function(){
-  Serial.print("Time: ");
-  unsigned long t = clock_base + (millis()/1000);
-  Serial.println(t);
+  String test = "Call to cb_test_function -- being logged";
+#ifdef DEBUG
+  debugV("%s",test.c_str());
+#endif
 }
 
 char deviceType [] = "uNode2";
+
+
+
 
 void publish_hello() {
   char msg[95];
@@ -283,11 +298,15 @@ void publish_hello() {
 
   sprintf(topic,"device/%06X/hello", ESP.getChipId());
   client.publish(topic,msg);
-#ifdef DEBUG
-  Serial.print("'Hello' playload = ");
-  Serial.println(msg);
+
+#ifdef INCLUDE_DEBUG
+  if(enableDebug){
+    String a = (String)"[" + millis() + "] " + "mqtt: [" + topic + "] " + msg;
+    debugV("%s",a.c_str());
+  }
 #endif
 }
+
 
 
 
@@ -300,7 +319,6 @@ void publish_hello() {
  * ==========================================================================
  */
 
-char * device_id;  // Global store for device ID
 /*
  * setup
  *
@@ -311,13 +329,16 @@ void setup() {
   Serial.begin(SERIAL_BAUD);
   EEPROM.begin(512);
 
-  char string_buffer[50];
-  sprintf(string_buffer,"%s-%08X", APP_STRING, ESP.getChipId());
+  generateDeviceId();
 
-   // Generate device id based on MAC (e.g. A0B1C2)
-  device_id = new char[7];
-  sprintf(device_id,"%06X",ESP.getChipId());
-  
+#ifdef INCLUDE_DEBUG
+  Serial.println("Build type: DEBUG");
+#else
+  Serial.println("Build type: RELEASE");
+#endif
+
+  setup_logging();  
+
   build_commands();
 
   // New style connection using the library
@@ -328,6 +349,13 @@ void setup() {
       start_ota();
     }
 #endif
+#ifdef INCLUDE_DEBUG
+  // Start RemoteDebug facility, including log to console
+  Debug.begin("main.cpp - Debug.begin - deviceid here");
+  Debug.setSerialEnabled(true);
+  enableDebug = true;
+  debugA("== Logging debug info to telnet and serial ==");
+#endif 
     //mqtt_setup();
     mqtt_start();
   }else{
@@ -335,10 +363,19 @@ void setup() {
     settingMode = true;
   }
 
+  //
+  // Continue initialisation....
+  //
+
   // Initialise 1-wire temperature sensors
   OneWireTemp_setup();
+  // Start scheduler  
+  scheduler_start();
 
-  Serial.println("setup - end");
+#ifdef INCLUDE_DEBUG
+  debugA("Setup completed");
+#endif
+
 }
 
 
@@ -351,10 +388,7 @@ void loop() {
   // Some loop functions should only run when in CONNECTED mode
   if(state == CONNECTED){
 
-#ifdef INCLUDE_OTA_PUSH
-    ArduinoOTA.handle();
-#endif
-      // things to do if we're connected
+     // things to do if we're connected
       client.loop();
   
   }
@@ -362,5 +396,8 @@ void loop() {
   // Any non-blocking calls
   scheduler_loop();
 
+#ifdef INCLUDE_DEBUG
+  Debug.handle();
+#endif
 
 }

@@ -6,3 +6,4 @@
 .DS_Store
 platformio.ini
 .vscode/extensions.json
+src/build_info.h

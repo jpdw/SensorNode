@@ -62,8 +62,6 @@ class ScanNetworks{
 
 void setupMode();
 
-extern char * device_id;
-
 boolean restoreConfig();
 boolean checkWlanConnection();
 void setupMode();
@@ -71,6 +69,7 @@ void startWebServer();
 String makePage(String, String);
 String urlDecode(String);
 String deviceID();
+String getDeviceID();
 boolean wlanConnect(const char *,const char *);
 boolean restoreConfig();
 boolean setup_wlan();

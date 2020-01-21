@@ -9,6 +9,7 @@
 
 #include "driver_owb_ds18b20.h"
 #include "scheduler.h"
+#include "logging.h"
 
 
 extern PubSubClient client;
@@ -183,7 +184,7 @@ void OneWireTemp_ReadTemperatures(){
 
 void OneWireTemp_RequestTemperatures(){
 #ifdef DEBUG
-	Serial.println("Starting temp request");
+	mlog("Starting temp request");
 #endif
   sensors.requestTemperatures();
   // Start a scheduler job to do the reading

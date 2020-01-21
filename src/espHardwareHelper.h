@@ -11,4 +11,6 @@ void restart(String);
 #ifdef INCLUDE_OTA_PUSH
 void start_ota();
 #endif
+void generateDeviceId();
+String getDeviceId();
 

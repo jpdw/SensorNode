@@ -56,6 +56,7 @@ extern void flash_led();
 extern void cb_request_temp_retrieval();
 extern void cb_temp_requests_ready();
 extern void cb_1mwd();
+extern void cb_test_function();
 #ifdef display
 extern void cb_display_refresh();
 #endif
@@ -148,11 +149,12 @@ void scheduler_setup(){
 	scheduler[2].callback=&cb_temp_requests_ready;
 
     // Scheduler 3 : Send heartbeat(s)
-    //scheduler[3].fScheduler_0= ( fSCHED0_enabled | fSCHED0_interval );
-    scheduler[3].fScheduler_0= ( fSCHED0_allzero);
+    scheduler[3].fScheduler_0= ( fSCHED0_enabled | fSCHED0_interval );
+    //scheduler[3].fScheduler_0= ( fSCHED0_allzero);
     scheduler[3].interval=DEFAULT_SENDHBEAT_INTERVAL;
     scheduler[3].next_event=0;
     //scheduler[3].callback=&send_hbeat;
+	scheduler[3].callback=&cb_test_function;
 
     // Scheduler 4 : Scan hardware / Update environment
     //scheduler[4].fScheduler_0= ( fSCHED0_enabled | fSCHED0_interval );
@@ -230,6 +232,7 @@ void scheduler_loop(){
 				}
 
 				// now actually make the call...
+				Serial.println(i);
 				scheduler[i].callback();
 			}
 		}
